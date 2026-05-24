@@ -9,103 +9,99 @@
 import * as THREE from 'three';
 import './style.css';
 
-// ============================================
-// Types (will expand in Phase 1+)
-// ============================================
+// Phase 1.1: Import shared constants (no behavior change yet)
+import {
+  LANE_LENGTH,
+  PLAYER_STATUE_X,
+  ENEMY_STATUE_X,
+} from './game/constants';
+import { createStickFigure } from './game/rendering/createStickFigure';
+import { Game } from './game/Game';
+
+// The real simulation (Phase 1.4 — miners now work!)
+const game = new Game();
+
+// Visual mesh association for real units (id → Group)
+const unitMeshes = new Map<number, THREE.Group>();
+
+// Selection visuals
+const selectionRings = new Map<number, THREE.Mesh>();
+
+// Selection state (Phase 2.6)
+const selectedUnits = new Set<number>();
+
+// Local demo-only timing (will be removed once real deposits fully replace it)
 interface DemoState {
   gold: number;
   lastGoldTick: number;
 }
 
-// ============================================
-// Constants (moved to src/game/constants.ts in Phase 1)
-// ============================================
-const LANE_LENGTH = 70;
-const PLAYER_STATUE_X = -32;
-const ENEMY_STATUE_X = 32;
+// Input / Picking helpers
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0 plane for picking
 
-// ============================================
-// Procedural Stick Figure (will live in rendering/createStickFigure.ts later)
-// ============================================
-function createStickFigure(color: number = 0xcccccc): THREE.Group {
-  const group = new THREE.Group();
+function screenToWorld(clientX: number, clientY: number): THREE.Vector3 | null {
+  pointer.x = (clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
 
-  const material = new THREE.MeshLambertMaterial({ color });
-  const limbMaterial = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  const intersectPoint = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(groundPlane, intersectPoint)) {
+    return intersectPoint;
+  }
+  return null;
+}
 
-  // Head
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.9, 12, 12),
-    material
-  );
-  head.position.y = 5.5;
-  group.add(head);
+function selectUnitAt(clientX: number, clientY: number, addToSelection = false) {
+  const world = screenToWorld(clientX, clientY);
+  if (!world) return;
 
-  // Torso
-  const torso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.7, 0.7, 3.2, 8),
-    material
-  );
-  torso.position.y = 3.2;
-  group.add(torso);
+  let closestId: number | null = null;
+  let closestDist = Infinity;
 
-  // Left leg
-  const leftLeg = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.25, 0.25, 2.8, 6),
-    limbMaterial
-  );
-  leftLeg.position.set(-0.6, 1.0, 0);
-  leftLeg.rotation.z = 0.2;
-  group.add(leftLeg);
+  for (const [id, mesh] of unitMeshes) {
+    const dist = Math.abs(mesh.position.x - world.x);
+    if (dist < 3.5 && dist < closestDist) {  // generous click radius
+      closestDist = dist;
+      closestId = id;
+    }
+  }
 
-  // Right leg
-  const rightLeg = leftLeg.clone();
-  rightLeg.position.x = 0.6;
-  rightLeg.rotation.z = -0.2;
-  group.add(rightLeg);
+  if (!addToSelection) selectedUnits.clear();
 
-  // Left arm
-  const leftArm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.2, 0.2, 2.4, 6),
-    limbMaterial
-  );
-  leftArm.position.set(-1.1, 3.5, 0);
-  leftArm.rotation.z = 1.1;
-  group.add(leftArm);
+  if (closestId !== null) {
+    if (selectedUnits.has(closestId)) {
+      selectedUnits.delete(closestId);
+    } else {
+      selectedUnits.add(closestId);
+    }
+  }
+}
 
-  // Right arm + pickaxe (miner look for Phase 0)
-  const rightArm = leftArm.clone();
-  rightArm.position.x = 1.1;
-  rightArm.rotation.z = -0.9;
-  group.add(rightArm);
+function giveOrder(clientX: number, clientY: number) {
+  const world = screenToWorld(clientX, clientY);
+  if (!world || selectedUnits.size === 0) return;
 
-  // Pickaxe handle
-  const handle = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.12, 3.5, 5),
-    new THREE.MeshLambertMaterial({ color: 0x5c4033 })
-  );
-  handle.position.set(2.6, 2.8, 0);
-  handle.rotation.z = -0.6;
-  group.add(handle);
+  for (const id of selectedUnits) {
+    const unit = game.units.find(u => u.id === id);
+    if (unit && unit.state !== 'dead') {
+      // Check for nearby enemy to attack
+      const enemyNearby = game.units.find(u => 
+        u.team !== unit.team && 
+        Math.abs(u.x - world.x) < 4.5 && 
+        u.state !== 'dead'
+      );
 
-  // Pickaxe head
-  const pickHead = new THREE.Mesh(
-    new THREE.ConeGeometry(0.9, 1.4, 4),
-    new THREE.MeshLambertMaterial({ color: 0x777777 })
-  );
-  pickHead.position.set(3.6, 2.0, 0);
-  pickHead.rotation.z = -1.8;
-  group.add(pickHead);
-
-  // Small team stripe on torso
-  const stripe = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.75, 0.75, 0.4, 8),
-    new THREE.MeshLambertMaterial({ color: 0x5ab0ff })
-  );
-  stripe.position.y = 4.0;
-  group.add(stripe);
-
-  return group;
+      if (enemyNearby) {
+        unit.targetEnemyId = enemyNearby.id;
+        unit.targetX = undefined;
+      } else {
+        unit.targetX = world.x;
+        unit.targetEnemyId = undefined;
+      }
+    }
+  }
 }
 
 // ============================================
@@ -117,6 +113,15 @@ const incomeEl = document.getElementById('income-value')!;
 const queueEl = document.getElementById('queue-text')!;
 const prodPanel = document.getElementById('production-buttons')!;
 
+// Simple HP displays (added dynamically for Phase 2)
+const playerHP = document.createElement('div');
+playerHP.style.cssText = 'margin-left:16px; color:#5ab0ff; font-family:var(--mono);';
+const enemyHP = document.createElement('div');
+enemyHP.style.cssText = 'margin-left:16px; color:#ff5a5a; font-family:var(--mono);';
+document.getElementById('top-bar')!.appendChild(playerHP);
+document.getElementById('top-bar')!.appendChild(enemyHP);
+
+// Demo-only timing (real gold now lives in game.gold)
 const state: DemoState = {
   gold: 150,
   lastGoldTick: performance.now(),
@@ -157,42 +162,38 @@ const dirLight = new THREE.DirectionalLight(0xfff4d9, 0.9);
 dirLight.position.set(30, 60, 20);
 scene.add(dirLight);
 
-// Ground plane (the battlefield)
+// Ground plane (the battlefield) - classic earthy brown
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(LANE_LENGTH + 20, 18),
-  new THREE.MeshLambertMaterial({ color: 0x2a2f38 })
+  new THREE.MeshLambertMaterial({ color: 0x3a2f1f })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = 0;
 scene.add(ground);
 
-// Subtle grid lines for "lane" feel (procedural, no texture)
-const grid = new THREE.GridHelper(LANE_LENGTH + 18, 18, 0x3a3f48, 0x3a3f48);
-grid.position.y = 0.02;
-grid.rotation.x = -Math.PI / 2; // lay flat like ground
+// Subtle grid lines for "lane" feel (more visible classic style)
+const grid = new THREE.GridHelper(LANE_LENGTH + 18, 22, 0x5c4630, 0x5c4630);
+grid.position.y = 0.03;
+grid.rotation.x = -Math.PI / 2;
 scene.add(grid);
 
-// Player Statue (left)
+// Player Statue (left) - stronger Order blue
 const playerStatue = new THREE.Mesh(
-  new THREE.BoxGeometry(5, 14, 6),
-  new THREE.MeshLambertMaterial({ color: 0x3a5f8a })
+  new THREE.BoxGeometry(5.5, 15, 7),
+  new THREE.MeshLambertMaterial({ color: 0x2f4a6e })
 );
-playerStatue.position.set(PLAYER_STATUE_X, 7, 0);
+playerStatue.position.set(PLAYER_STATUE_X, 7.5, 0);
 scene.add(playerStatue);
 
-// Enemy Statue (right)
+// Enemy Statue (right) - redder
 const enemyStatue = new THREE.Mesh(
-  new THREE.BoxGeometry(5, 14, 6),
-  new THREE.MeshLambertMaterial({ color: 0x8a3a3a })
+  new THREE.BoxGeometry(5.5, 15, 7),
+  new THREE.MeshLambertMaterial({ color: 0x6e2f2f })
 );
-enemyStatue.position.set(ENEMY_STATUE_X, 7, 0);
+enemyStatue.position.set(ENEMY_STATUE_X, 7.5, 0);
 scene.add(enemyStatue);
 
-// Demo Miner (procedural)
-const demoMiner = createStickFigure(0xcccccc);
-demoMiner.position.x = -18;
-demoMiner.position.y = 0;
-scene.add(demoMiner);
+// (Legacy demoMiner removed - real units look much better now)
 
 // Simple "gold node" visual
 const goldPile = new THREE.Group();
@@ -214,8 +215,11 @@ scene.add(goldPile);
 // UI Wiring (Phase 0 demo buttons)
 // ============================================
 function updateGoldUI() {
-  goldEl.textContent = Math.floor(state.gold).toString();
-  // Fake slow income for visual
+  // Phase 1.3: Prefer real game gold (will become the only source in 1.4)
+  const displayGold = Math.floor(game.gold);
+  goldEl.textContent = displayGold.toString();
+
+  // Temporary fake income display (replaced when real deposits happen)
   const elapsed = (performance.now() - state.lastGoldTick) / 1000;
   incomeEl.textContent = `+${(12 * Math.max(0, Math.min(1, elapsed / 8))).toFixed(0)}/s`;
 }
@@ -225,8 +229,9 @@ function addDemoButton(label: string, cost: number, onClick: () => void) {
   btn.className = 'prod-btn';
   btn.innerHTML = `${label} <span class="cost">${cost}g</span>`;
   btn.onclick = () => {
-    if (state.gold >= cost) {
-      state.gold -= cost;
+    // Phase 1.5: Spend from the real game gold so the economy feels connected
+    if (game.gold >= cost) {
+      game.state.gold -= cost; // direct for demo buttons (real queue comes in Phase 2)
       onClick();
       updateGoldUI();
     } else {
@@ -238,48 +243,72 @@ function addDemoButton(label: string, cost: number, onClick: () => void) {
   return btn;
 }
 
-// Phase 0 demo production (will be real in Phase 2)
+// Real production buttons (Phase 2)
 addDemoButton('MINER', 75, () => {
-  // Spawn another demo miner for fun
-  const extra = createStickFigure(0xcccccc);
-  extra.position.x = -18 + (Math.random() - 0.5) * 6;
-  extra.position.z = (Math.random() - 0.5) * 4;
-  scene.add(extra);
-  // Auto-remove after 6s (demo only)
-  setTimeout(() => scene.remove(extra), 6000);
+  game.queueUnit('miner');
 });
 
-addDemoButton('SWORDWRATH (preview)', 125, () => {
-  const fighter = createStickFigure(0xdddddd);
-  // Swap to sword look (quick hack for demo)
-  fighter.children.forEach((c, i) => {
-    if (i > 4) fighter.remove(c); // rough cleanup
-  });
-  fighter.position.x = -16;
-  fighter.position.z = (Math.random() - 0.5) * 3;
-  scene.add(fighter);
-  setTimeout(() => scene.remove(fighter), 8000);
+addDemoButton('SWORDWRATH', 125, () => {
+  game.queueUnit('swordwrath');
 });
 
-queueEl.textContent = 'Queue: (Phase 0 — static demo)';
+// Update queue display every frame (simple for now)
+function updateQueueUI() {
+  const q = game.state.productionQueue;
+  if (q.length === 0) {
+    queueEl.textContent = 'Queue: idle';
+  } else {
+    const first = q[0];
+    const pct = Math.floor((first.progress / first.totalTime) * 100);
+    queueEl.textContent = `Queue: ${first.type} ${pct}% (${q.length} in queue)`;
+  }
+}
 
 // ============================================
-// Input (preview of future InputSystem)
+// Input (Phase 2.6 - basic selection + orders + camera)
 // ============================================
 let isDragging = false;
 let prevMouseX = 0;
+let dragThreshold = 5;
+let mouseDownPos = { x: 0, y: 0 };
 
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 0) {
-    isDragging = true;
+  mouseDownPos = { x: e.clientX, y: e.clientY };
+
+  if (e.button === 0) { // Left - camera drag or select
+    isDragging = false; // will decide on move/up
     prevMouseX = e.clientX;
   }
 });
 
-window.addEventListener('mouseup', () => (isDragging = false));
+window.addEventListener('mouseup', (e) => {
+  const moved = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+
+  if (e.button === 0) {
+    if (!isDragging && moved < dragThreshold) {
+      // Click - select unit
+      const add = e.shiftKey || e.metaKey;
+      selectUnitAt(e.clientX, e.clientY, add);
+    }
+    isDragging = false;
+  }
+
+  if (e.button === 2) { // Right click - give order
+    giveOrder(e.clientX, e.clientY);
+  }
+});
+
+// Prevent context menu on right click
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('mousemove', (e) => {
+  const moved = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+  if (moved > dragThreshold && !isDragging && e.buttons & 1) {
+    isDragging = true;
+  }
+
   if (!isDragging) return;
+
   const dx = e.clientX - prevMouseX;
   prevMouseX = e.clientX;
 
@@ -301,15 +330,17 @@ canvas.addEventListener('wheel', (e) => {
   camera.updateProjectionMatrix();
 });
 
-// Keyboard for demo
+// Keyboard
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') {
     e.preventDefault();
-    console.log('[Stick War Demo] Current state:', state);
-    console.log('Camera:', camera.position);
-    // Tiny gold burst for fun
-    state.gold += 8;
-    updateGoldUI();
+    console.log('[Stick War] Game state snapshot:', {
+      gold: game.gold,
+      units: game.units.length,
+      playerHP: game.playerStatueHP,
+      enemyHP: game.enemyStatueHP,
+      queue: game.state.productionQueue.length,
+    });
   }
   if (e.key.toLowerCase() === 'r') {
     // Reset camera
@@ -320,6 +351,9 @@ window.addEventListener('keydown', (e) => {
     camera.top = 28;
     camera.bottom = -28;
     camera.updateProjectionMatrix();
+  }
+  if (e.key.toLowerCase() === 'escape') {
+    selectedUnits.clear();
   }
 });
 
@@ -341,41 +375,176 @@ window.addEventListener('resize', onResize);
 onResize();
 
 // ============================================
-// Animation Loop (will become Game loop in Phase 1)
+// Animation Loop + Fixed Timestep (Phase 1.3)
 // ============================================
 let frame = 0;
+let accumulator = 0;
+const FIXED_STEP = 1 / 30; // 30 Hz logic (from constants in later step)
 
 function animate() {
   requestAnimationFrame(animate);
 
   const t = performance.now() * 0.001;
-
-  // Gentle walk / bob animation on the demo miner
-  demoMiner.position.y = Math.sin(t * 3.2) * 0.15;
-  demoMiner.rotation.y = Math.sin(t * 0.6) * 0.08;
-
-  // Subtle arm/leg swing (preview of real animation system)
-  if (demoMiner.children[2]) (demoMiner.children[2] as THREE.Mesh).rotation.z = 0.2 + Math.sin(t * 4.5) * 0.6;
-  if (demoMiner.children[3]) (demoMiner.children[3] as THREE.Mesh).rotation.z = -0.2 + Math.sin(t * 4.5 + 0.8) * 0.6;
-
-  // Fake slow gold income
   const now = performance.now();
-  if (now - state.lastGoldTick > 420) {
-    state.gold += 0.6;
-    state.lastGoldTick = now;
-    updateGoldUI();
+
+  // Fixed timestep accumulator — real game logic now runs here
+  const delta = Math.min((now - (window as any)._lastTime || now) / 1000, 0.1);
+  (window as any)._lastTime = now;
+  accumulator += delta;
+
+  while (accumulator >= FIXED_STEP) {
+    game.update(FIXED_STEP);
+    accumulator -= FIXED_STEP;
   }
 
-  // Occasional gold sparkle on the pile (cheap demo effect)
+  // === Render Sync: drive visuals from real game.units (Phase 1.4) ===
+  const aliveIds = new Set<number>();
+
+  for (const unit of game.units) {
+    if (unit.state === 'dead') continue;
+    aliveIds.add(unit.id);
+
+    let mesh = unitMeshes.get(unit.id);
+    if (!mesh) {
+      // Classic Stick War colors: blue for Order (player), red for enemy
+      const teamColor = unit.team === 0 ? 0x4a90d9 : 0xc94c4c;
+      mesh = createStickFigure(teamColor, unit.type);
+      mesh.position.y = 0;
+      mesh.position.z = (unit.id % 3 - 1) * 0.55; // slight spread
+      scene.add(mesh);
+      unitMeshes.set(unit.id, mesh);
+    }
+
+    // Update position from simulation (1D lane → 3D)
+    mesh.position.x = unit.x;
+
+    // Damage flash (quick white flash on hit)
+    const flash = (unit as any)._damageFlash;
+    if (flash && flash > 0) {
+      (unit as any)._damageFlash = Math.max(0, flash - delta); // delta is from the loop
+      mesh.traverse((child: any) => {
+        if (child.material && child.material.emissive) {
+          child.material.emissive.setHex(0x888888);
+        }
+      });
+    } else {
+      mesh.traverse((child: any) => {
+        if (child.material && child.material.emissive) {
+          child.material.emissive.setHex(0x000000);
+        }
+      });
+    }
+
+    // Simple procedural animation based on state
+    const isMining = unit.state === 'mining';
+    const bob = isMining ? Math.sin(t * 6) * 0.05 : Math.sin(t * 4.2) * 0.18;
+    mesh.position.y = bob;
+
+    // Leg/arm swing when moving
+    const moving = unit.state === 'moving' || unit.state === 'returning';
+    const swing = moving ? Math.sin(t * 5.5) * 0.7 : 0.1;
+
+    if (mesh.children[2]) (mesh.children[2] as THREE.Mesh).rotation.z = 0.2 + swing;
+    if (mesh.children[3]) (mesh.children[3] as THREE.Mesh).rotation.z = -0.2 - swing * 0.9;
+
+    // Slight facing for returning vs going to mine
+    mesh.rotation.y = unit.state === 'returning' ? 0.15 : -0.05;
+  }
+
+  // Clean up any meshes whose units are gone
+  for (const [id, mesh] of unitMeshes) {
+    if (!aliveIds.has(id)) {
+      scene.remove(mesh);
+      unitMeshes.delete(id);
+
+      // Also clean selection ring
+      const ring = selectionRings.get(id);
+      if (ring) {
+        scene.remove(ring);
+        selectionRings.delete(id);
+      }
+      selectedUnits.delete(id);
+    }
+  }
+
+  // === Selection highlights (Phase 2.6) ===
+  for (const id of selectedUnits) {
+    const mesh = unitMeshes.get(id);
+    if (!mesh) continue;
+
+    let ring = selectionRings.get(id);
+    if (!ring) {
+      // Thin glowing ring under the unit
+      ring = new THREE.Mesh(
+        new THREE.RingGeometry(1.1, 1.35, 24),
+        new THREE.MeshBasicMaterial({ 
+          color: 0x5ab0ff, 
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      scene.add(ring);
+      selectionRings.set(id, ring);
+    }
+
+    // Position the ring under the unit + gentle pulse
+    ring.position.x = mesh.position.x;
+    ring.position.y = 0.04;
+    ring.position.z = mesh.position.z;
+
+    const pulse = 1 + Math.sin(t * 8) * 0.08;
+    ring.scale.set(pulse, pulse, 1);
+  }
+
+  // Hide rings for units no longer selected
+  for (const [id, ring] of selectionRings) {
+    if (!selectedUnits.has(id)) {
+      ring.visible = false;
+    } else {
+      ring.visible = true;
+    }
+  }
+
+  // Gold sparkle (unchanged)
   if (frame % 18 === 0) {
     goldPile.children.forEach((n, i) => {
       (n as THREE.Mesh).scale.setScalar(1 + Math.sin(t * 3 + i) * 0.08);
     });
   }
 
+  // Update UI from the *real* economy + production queue
+  updateGoldUI();
+  updateQueueUI();
+
+  // Statue HP
+  playerHP.textContent = `Your Statue: ${game.playerStatueHP}`;
+  enemyHP.textContent = `Enemy Statue: ${game.enemyStatueHP}`;
+
+  // Win / Lose check (Phase 2.5)
+  if (game.isGameOver) {
+    const overlay = document.getElementById('game-over') as HTMLDivElement;
+    const title = document.getElementById('game-over-title')!;
+    if (game.playerStatueHP <= 0) {
+      title.textContent = 'DEFEAT — The enemy destroyed your statue';
+      title.style.color = '#ff5a5a';
+    } else {
+      title.textContent = 'VICTORY — You destroyed the enemy statue!';
+      title.style.color = '#4ade80';
+    }
+    overlay.style.display = 'flex';
+  }
+
   renderer.render(scene, camera);
   frame++;
 }
+
+// Restart button
+const restartBtn = document.getElementById('restart-btn')!;
+restartBtn.onclick = () => {
+  location.reload(); // simple and effective for MVP
+};
 
 updateGoldUI();
 animate();
