@@ -1,0 +1,22 @@
+{
+  "name": "stick-war",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Three.js recreation of the classic 2009 Flash strategy game Stick War",
+  "author": "TriMPham98",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "three": "^0.184.0"
+  }
+}

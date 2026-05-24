@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stick War • Three.js</title>
+    <meta name="description" content="A Three.js recreation of the classic Flash strategy game Stick War. Mine gold, train units, destroy the enemy statue." />
+  </head>
+  <body>
+    <!-- Three.js full-screen canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- UI Overlay (vanilla DOM) -->
+    <div id="ui">
+      <!-- Top bar: resources + info -->
+      <div id="top-bar">
+        <div class="stat">
+          <span class="label">GOLD</span>
+          <span id="gold-value">150</span>
+        </div>
+        <div class="stat">
+          <span class="label">INCOME</span>
+          <span id="income-value">+0/s</span>
+        </div>
+        <div class="stat right">
+          <span id="status-text">ORDER vs ENEMY • DEMO</span>
+        </div>
+      </div>
+
+      <!-- Left production panel (will be populated by TS) -->
+      <div id="production-panel">
+        <h3>TRAIN UNITS</h3>
+        <div id="production-buttons">
+          <!-- Populated dynamically in main.ts for Phase 0 demo -->
+        </div>
+        <div id="queue-display">
+          <span id="queue-text">Queue: —</span>
+        </div>
+      </div>
+
+      <!-- Minimal instructions / status -->
+      <div id="instructions">
+        <strong>Phase 0:</strong> Hello Three.js scene.<br>
+        Click + drag to look around (future input). <kbd>Space</kbd> to log state.
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
