@@ -41,6 +41,11 @@ export class Game {
   private enemySpawnTimer = 0;
   private enemySpawnInterval = 7.5; // seconds between enemy waves (tunable)
 
+  // Phase 4 stats
+  gameStartTime = performance.now();
+  totalGoldEarned = 0;
+  unitsProduced = 0;
+
   constructor() {
     this.state = {
       gold: GOLD_START,
@@ -121,6 +126,7 @@ export class Game {
           if (distance(miner.x, depositX) < 1.2) {
             if (miner.carryGold) {
               this.state.gold += miner.carryGold;
+              this.totalGoldEarned += miner.carryGold;
               miner.carryGold = 0;
             }
             miner.state = 'moving';
@@ -146,15 +152,35 @@ export class Game {
 
     // === General movement for all units with targets (Phase 2) ===
     for (const unit of this.state.units) {
-      if (unit.state === 'dead' || !unit.targetX) continue;
+      if (unit.state === 'dead') continue;
       if (unit.type === 'miner' && unit.team === 0) continue; // miners handled by economy logic
 
+      let targetX: number | undefined = unit.targetX;
+
+      // Pursuit logic for explicit attack commands (this was missing)
+      if (unit.targetEnemyId) {
+        const enemy = this.state.units.find(u => u.id === unit.targetEnemyId && u.state !== 'dead');
+        if (enemy) {
+          targetX = enemy.x;
+        } else {
+          // Enemy died — clear the command
+          unit.targetEnemyId = undefined;
+        }
+      }
+
+      if (!targetX) continue;
+
       const speed = (unit.type === 'miner' ? MINER : SWORDWRATH).speed;
-      const dir = Math.sign(unit.targetX - unit.x);
+      const dir = Math.sign(targetX - unit.x);
       unit.x += dir * speed * dt;
 
       // Clamp
       unit.x = Math.max(LANE_MIN_X + 1, Math.min(LANE_MAX_X - 1, unit.x));
+
+      // If we were moving to a location and got close, clear the order (arrival)
+      if (!unit.targetEnemyId && Math.abs(unit.x - targetX) < 1.5) {
+        unit.targetX = undefined;
+      }
     }
 
     // === Combat (Phase 2.3) ===
@@ -167,6 +193,7 @@ export class Game {
     if (this.state.gold < def.cost) return false;
 
     this.state.gold -= def.cost;
+    this.unitsProduced += 1;
 
     this.state.productionQueue.push({
       type,
@@ -275,6 +302,19 @@ export class Game {
   /** Quick way to know if game is over */
   get isGameOver(): boolean {
     return this.state.playerStatueHP <= 0 || this.state.enemyStatueHP <= 0;
+  }
+
+  // Phase 4 stats getters
+  getGameDuration(): number {
+    return Math.floor((performance.now() - this.gameStartTime) / 1000);
+  }
+
+  getTotalGoldEarned(): number {
+    return Math.floor(this.totalGoldEarned);
+  }
+
+  getUnitsProduced(): number {
+    return this.unitsProduced;
   }
 }
 

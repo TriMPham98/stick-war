@@ -41,16 +41,17 @@
 
       <!-- Minimal instructions / status -->
       <div id="instructions">
-        <strong>Phase 2:</strong> Combat + Production + Controls online.<br>
-        <strong>Left-click</strong> units to select • <strong>Right-click</strong> ground to order move/attack • <strong>Shift</strong> for multi-select • <strong>Esc</strong> to deselect<br>
-        Train units with the buttons. Destroy the enemy statue before they destroy yours.
+        <strong>Controls:</strong><br>
+        <strong>Left-click</strong> units to select (Shift for multi) • <strong>Right-click</strong> to Move/Attack • <strong>S</strong> = Stop selected<br>
+        <strong>Drag</strong> to pan camera • Scroll to zoom. Train units on the left. Destroy the enemy statue!
       </div>
 
-      <!-- Game Over Overlay -->
+      <!-- Game Over Overlay (Phase 4) -->
       <div id="game-over" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.75); align-items:center; justify-content:center; flex-direction:column; z-index:100;">
-        <div style="background:#121317; padding:32px 48px; border-radius:12px; border:1px solid #2a2d36; text-align:center;">
+        <div style="background:#121317; padding:32px 48px; border-radius:12px; border:1px solid #2a2d36; text-align:center; min-width: 280px;">
           <h2 id="game-over-title" style="margin:0 0 12px; font-size:28px;"></h2>
-          <button id="restart-btn" style="margin-top:16px; padding:10px 24px; font-size:15px; background:#1c1f26; border:1px solid #5ab0ff; color:#c5c8d1; border-radius:6px; cursor:pointer;">Play Again</button>
+          <div id="game-over-stats" style="margin-bottom: 16px;"></div>
+          <button id="restart-btn" style="margin-top:8px; padding:10px 24px; font-size:15px; background:#1c1f26; border:1px solid #5ab0ff; color:#c5c8d1; border-radius:6px; cursor:pointer;">Play Again</button>
         </div>
       </div>
     </div>

@@ -27,6 +27,12 @@ const unitMeshes = new Map<number, THREE.Group>();
 // Selection visuals
 const selectionRings = new Map<number, THREE.Mesh>();
 
+// Health bars (Phase 3) - DOM elements
+const healthBars = new Map<number, HTMLDivElement>();
+
+// Temporary order markers (visual feedback for commands)
+let orderMarkers: THREE.Mesh[] = [];
+
 // Selection state (Phase 2.6)
 const selectedUnits = new Set<number>();
 
@@ -51,6 +57,21 @@ function screenToWorld(clientX: number, clientY: number): THREE.Vector3 | null {
     return intersectPoint;
   }
   return null;
+}
+
+/** Convert world position to screen pixel coordinates (for DOM overlays) */
+function worldToScreen(worldPos: THREE.Vector3): { x: number; y: number } | null {
+  const vector = worldPos.clone();
+  vector.project(camera);
+
+  const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+
+  // Simple off-screen culling
+  if (x < -50 || x > window.innerWidth + 50 || y < -20 || y > window.innerHeight + 20) {
+    return null;
+  }
+  return { x, y };
 }
 
 function selectUnitAt(clientX: number, clientY: number, addToSelection = false) {
@@ -102,6 +123,33 @@ function giveOrder(clientX: number, clientY: number) {
       }
     }
   }
+
+  // Visual order marker (command feedback)
+  const marker = new THREE.Mesh(
+    new THREE.RingGeometry(0.8, 1.1, 20),
+    new THREE.MeshBasicMaterial({ color: 0x5ab0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.7 })
+  );
+  marker.rotation.x = -Math.PI / 2;
+  marker.position.set(world.x, 0.05, 0);
+  scene.add(marker);
+  orderMarkers.push(marker);
+
+  // Auto-remove marker after 1.2 seconds
+  setTimeout(() => {
+    if (marker.parent) marker.parent.remove(marker);
+    orderMarkers = orderMarkers.filter(m => m !== marker);
+  }, 1200);
+}
+
+/** Stop command - clear all orders for selected units */
+function stopSelectedUnits() {
+  for (const id of selectedUnits) {
+    const unit = game.units.find(u => u.id === id);
+    if (unit) {
+      unit.targetX = undefined;
+      unit.targetEnemyId = undefined;
+    }
+  }
 }
 
 // ============================================
@@ -120,6 +168,11 @@ const enemyHP = document.createElement('div');
 enemyHP.style.cssText = 'margin-left:16px; color:#ff5a5a; font-family:var(--mono);';
 document.getElementById('top-bar')!.appendChild(playerHP);
 document.getElementById('top-bar')!.appendChild(enemyHP);
+
+// Selected units indicator (Phase 3/4 commands)
+const selectedDisplay = document.createElement('div');
+selectedDisplay.style.cssText = 'margin-left: auto; margin-right: 12px; color: #5ab0ff; font-family: var(--mono); font-size: 13px;';
+document.getElementById('top-bar')!.appendChild(selectedDisplay);
 
 // Demo-only timing (real gold now lives in game.gold)
 const state: DemoState = {
@@ -192,6 +245,27 @@ const enemyStatue = new THREE.Mesh(
 );
 enemyStatue.position.set(ENEMY_STATUE_X, 7.5, 0);
 scene.add(enemyStatue);
+
+// Static health bars for statues (Phase 3)
+const playerStatueHB = document.createElement('div');
+playerStatueHB.className = 'health-bar';
+playerStatueHB.style.width = '60px';
+playerStatueHB.style.borderColor = '#4a90d9';
+const playerFill = document.createElement('div');
+playerFill.className = 'fill';
+playerFill.style.background = '#4ade80';
+playerStatueHB.appendChild(playerFill);
+document.getElementById('ui')!.appendChild(playerStatueHB);
+
+const enemyStatueHB = document.createElement('div');
+enemyStatueHB.className = 'health-bar';
+enemyStatueHB.style.width = '60px';
+enemyStatueHB.style.borderColor = '#c94c4c';
+const enemyFill = document.createElement('div');
+enemyFill.className = 'fill';
+enemyFill.style.background = '#f87171';
+enemyStatueHB.appendChild(enemyFill);
+document.getElementById('ui')!.appendChild(enemyStatueHB);
 
 // (Legacy demoMiner removed - real units look much better now)
 
@@ -355,6 +429,10 @@ window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'escape') {
     selectedUnits.clear();
   }
+  if (e.key.toLowerCase() === 's' && selectedUnits.size > 0) {
+    e.preventDefault();
+    stopSelectedUnits();
+  }
 });
 
 // ============================================
@@ -449,6 +527,48 @@ function animate() {
 
     // Slight facing for returning vs going to mine
     mesh.rotation.y = unit.state === 'returning' ? 0.15 : -0.05;
+
+    // === Health bar (Phase 3) ===
+    let hb = healthBars.get(unit.id);
+    if (!hb) {
+      hb = document.createElement('div');
+      hb.className = 'health-bar';
+
+      const fill = document.createElement('div');
+      fill.className = 'fill';
+      hb.appendChild(fill);
+
+      document.getElementById('ui')!.appendChild(hb);
+      healthBars.set(unit.id, hb);
+    }
+
+    // Update fill width and color
+    const pct = Math.max(0, unit.health / unit.maxHealth);
+    const fillEl = hb.firstElementChild as HTMLDivElement;
+    fillEl.style.width = `${pct * 100}%`;
+
+    // Team color for the bar
+    const barColor = unit.team === 0 ? '#4ade80' : '#f87171';
+    fillEl.style.background = barColor;
+
+    // Only show health bar if damaged (classic behavior) or selected
+    const showBar = pct < 0.99 || selectedUnits.has(unit.id);
+
+    // Position above the unit's head
+    const headWorld = new THREE.Vector3(
+      mesh.position.x,
+      mesh.position.y + 3.8, // a bit above head
+      mesh.position.z
+    );
+
+    const screenPos = worldToScreen(headWorld);
+    if (screenPos && showBar) {
+      hb.style.left = `${screenPos.x - 21}px`; // center the 42px bar
+      hb.style.top = `${screenPos.y - 18}px`;
+      hb.style.display = 'block';
+    } else {
+      hb.style.display = 'none';
+    }
   }
 
   // Clean up any meshes whose units are gone
@@ -464,6 +584,13 @@ function animate() {
         selectionRings.delete(id);
       }
       selectedUnits.delete(id);
+
+      // Remove health bar DOM element
+      const hb = healthBars.get(id);
+      if (hb) {
+        hb.remove();
+        healthBars.delete(id);
+      }
     }
   }
 
@@ -514,18 +641,54 @@ function animate() {
     });
   }
 
+  // Clean up any stray order markers (safety)
+  orderMarkers = orderMarkers.filter(marker => marker.parent);
+
   // Update UI from the *real* economy + production queue
   updateGoldUI();
   updateQueueUI();
 
-  // Statue HP
+  // Selected units command feedback
+  if (selectedUnits.size > 0) {
+    selectedDisplay.textContent = `${selectedUnits.size} selected • S = Stop • Right-click to order`;
+    selectedDisplay.style.color = '#5ab0ff';
+  } else {
+    selectedDisplay.textContent = '';
+  }
+
+  // Statue HP (text + floating bars)
   playerHP.textContent = `Your Statue: ${game.playerStatueHP}`;
   enemyHP.textContent = `Enemy Statue: ${game.enemyStatueHP}`;
 
-  // Win / Lose check (Phase 2.5)
+  // Position statue health bars above the 3D statues
+  const playerStatueScreen = worldToScreen(new THREE.Vector3(PLAYER_STATUE_X, 16, 0));
+  if (playerStatueScreen) {
+    playerStatueHB.style.left = `${playerStatueScreen.x - 30}px`;
+    playerStatueHB.style.top = `${playerStatueScreen.y - 22}px`;
+    playerStatueHB.style.display = 'block';
+    (playerStatueHB.firstElementChild as HTMLDivElement).style.width = `${(game.playerStatueHP / 650) * 100}%`;
+  } else {
+    playerStatueHB.style.display = 'none';
+  }
+
+  const enemyStatueScreen = worldToScreen(new THREE.Vector3(ENEMY_STATUE_X, 16, 0));
+  if (enemyStatueScreen) {
+    enemyStatueHB.style.left = `${enemyStatueScreen.x - 30}px`;
+    enemyStatueHB.style.top = `${enemyStatueScreen.y - 22}px`;
+    enemyStatueHB.style.display = 'block';
+    (enemyStatueHB.firstElementChild as HTMLDivElement).style.width = `${(game.enemyStatueHP / 650) * 100}%`;
+  } else {
+    enemyStatueHB.style.display = 'none';
+  }
+
+  // Win / Lose check (Phase 2.5) + Phase 4 stats
   if (game.isGameOver) {
     const overlay = document.getElementById('game-over') as HTMLDivElement;
+    if (overlay.style.display === 'flex') return; // already shown
+
     const title = document.getElementById('game-over-title')!;
+    const statsContainer = document.getElementById('game-over-stats')!;
+
     if (game.playerStatueHP <= 0) {
       title.textContent = 'DEFEAT — The enemy destroyed your statue';
       title.style.color = '#ff5a5a';
@@ -533,6 +696,16 @@ function animate() {
       title.textContent = 'VICTORY — You destroyed the enemy statue!';
       title.style.color = '#4ade80';
     }
+
+    // Populate stats
+    statsContainer.innerHTML = `
+      <div style="margin: 12px 0; font-size: 14px; color: #c5c8d1; line-height: 1.6;">
+        <div>Time: <strong>${game.getGameDuration()}s</strong></div>
+        <div>Gold Earned: <strong>${game.getTotalGoldEarned()}</strong></div>
+        <div>Units Trained: <strong>${game.getUnitsProduced()}</strong></div>
+      </div>
+    `;
+
     overlay.style.display = 'flex';
   }
 
