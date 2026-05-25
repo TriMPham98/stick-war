@@ -1,134 +1,194 @@
 /**
  * Procedural stick-figure factory for Stick War Three.js
- * Pure visual component — no game logic.
- * All geometry is generated from primitives so we stay 100% asset-free in MVP.
+ *
+ * Greatly improved version with:
+ * - Much better visual fidelity while staying 100% procedural / asset-free
+ * - Structured hierarchy with named parts for reliable animation
+ * - Distinct, iconic looks for Miner vs Swordwrath
+ *
+ * Animation is handled externally via `animateStickFigure`.
  */
 
 import * as THREE from 'three';
 import type { UnitType } from '../types';
 
-const HEAD_MATERIAL_CACHE = new Map<number, THREE.Material>();
+const stickMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+const headMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+const weaponMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+const darkWood = new THREE.MeshLambertMaterial({ color: 0x3d2b1f });
 
-function getHeadMaterial(color: number) {
-  if (!HEAD_MATERIAL_CACHE.has(color)) {
-    HEAD_MATERIAL_CACHE.set(color, new THREE.MeshLambertMaterial({ color }));
-  }
-  return HEAD_MATERIAL_CACHE.get(color)!;
+export interface StickFigureParts {
+  head: THREE.Mesh;
+  helmet: THREE.Mesh;
+  torso: THREE.Mesh;
+  leftLeg: THREE.Mesh;
+  rightLeg: THREE.Mesh;
+  leftArm: THREE.Mesh;
+  rightArm: THREE.Mesh;
+  weapon?: THREE.Group | THREE.Mesh;
 }
 
-/**
- * Creates a Group representing a stick figure.
- * For 'miner' it gets a pickaxe; for 'swordwrath' a simple blade.
- * The returned Group can be positioned/animated by the render sync layer.
- */
 export function createStickFigure(
-  color: number = 0x222222,
+  teamColor: number = 0x4a90d9,
   type: UnitType = 'miner'
 ): THREE.Group {
   const group = new THREE.Group();
+  group.userData.parts = {} as StickFigureParts;
 
-  // Classic Stick War look: very thin dark "ink" sticks + small head
-  const stickMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a }); // almost black for classic thin stick feel
-  const headMat = getHeadMaterial(0xeeeeee); // light head like original
-  const weaponMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-
-  // Smaller head (classic proportion)
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 10), headMat);
-  head.position.y = 4.8;
+  // === HEAD (small classic proportion) ===
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 10), headMat);
+  head.position.y = 4.9;
   group.add(head);
+  (group.userData.parts as StickFigureParts).head = head;
 
-  // Very thin torso (classic stick)
+  // Team helmet (flatter, more iconic)
+  const helmet = new THREE.Mesh(
+    new THREE.SphereGeometry(0.52, 12, 8),
+    new THREE.MeshLambertMaterial({ color: teamColor })
+  );
+  helmet.position.y = 5.05;
+  helmet.scale.set(1.05, 0.38, 1.05);
+  group.add(helmet);
+  (group.userData.parts as StickFigureParts).helmet = helmet;
+
+  // === TORSO (slightly thicker than before for better silhouette) ===
   const torso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6),
+    new THREE.CylinderGeometry(0.11, 0.095, 2.5, 5),
     stickMat
   );
-  torso.position.y = 3.0;
+  torso.position.y = 3.05;
   group.add(torso);
+  (group.userData.parts as StickFigureParts).torso = torso;
 
-  // Thin legs
-  const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 2.4, 5);
-  const leftLeg = new THREE.Mesh(legGeo, stickMat);
-  leftLeg.position.set(-0.35, 1.1, 0);
-  leftLeg.rotation.z = 0.25;
-  group.add(leftLeg);
-
-  const rightLeg = new THREE.Mesh(legGeo, stickMat);
-  rightLeg.position.set(0.35, 1.1, 0);
-  rightLeg.rotation.z = -0.25;
-  group.add(rightLeg);
-
-  // Thin arms
-  const armGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.0, 5);
-  const leftArm = new THREE.Mesh(armGeo, stickMat);
-  leftArm.position.set(-0.7, 3.4, 0);
-  leftArm.rotation.z = 1.0;
-  group.add(leftArm);
-
-  const rightArm = new THREE.Mesh(armGeo, stickMat);
-  rightArm.position.set(0.7, 3.4, 0);
-
-  // Weapon
-  if (type === 'miner') {
-    rightArm.rotation.z = -0.85;
-    group.add(rightArm);
-
-    // Pickaxe handle (thin)
-    const handle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.04, 0.04, 3.2, 4),
-      new THREE.MeshLambertMaterial({ color: 0x3d2b1f })
+  // Subtle team color chest band / "armor" hint for Swordwrath
+  if (type === 'swordwrath') {
+    const chestPlate = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.135, 0.12, 0.7, 5),
+      new THREE.MeshLambertMaterial({ color: teamColor })
     );
-    handle.position.set(2.1, 2.6, 0);
-    handle.rotation.z = -0.55;
-    group.add(handle);
-
-    // Pick head
-    const pickHead = new THREE.Mesh(
-      new THREE.ConeGeometry(0.55, 1.1, 4),
-      weaponMat
-    );
-    pickHead.position.set(2.85, 2.0, 0);
-    pickHead.rotation.z = -1.65;
-    group.add(pickHead);
-  } else {
-    // Swordwrath - classic sword
-    rightArm.rotation.z = -0.55;
-    group.add(rightArm);
-
-    // Sword blade (thin rectangle)
-    const blade = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 2.2, 0.35),
-      weaponMat
-    );
-    blade.position.set(1.85, 3.0, 0);
-    blade.rotation.z = -0.35;
-    group.add(blade);
-
-    // Simple hilt
-    const hilt = new THREE.Mesh(
-      new THREE.BoxGeometry(0.22, 0.18, 0.5),
-      new THREE.MeshLambertMaterial({ color: 0x3a3a3a })
-    );
-    hilt.position.set(1.55, 2.55, 0);
-    group.add(hilt);
+    chestPlate.position.y = 3.4;
+    group.add(chestPlate);
   }
 
-  // Small team color band on torso (Order blue / enemy red)
-  const teamColor = color; // passed in as team accent
-  const band = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.12, 0.35, 6),
-    new THREE.MeshLambertMaterial({ color: teamColor })
-  );
-  band.position.y = 3.6;
-  group.add(band);
+  // === LEGS — pivoting from the hip (top of leg), not the center ===
+  const hipY = 1.88;                    // joint position at bottom of torso
+  const legLength = 2.32;
 
-  // Tiny head "helmet" accent for team
-  const helm = new THREE.Mesh(
-    new THREE.SphereGeometry(0.58, 8, 8),
+  // Create leg geometry with origin at the TOP (hip) instead of center
+  const legGeo = new THREE.CylinderGeometry(0.055, 0.055, legLength, 5);
+  legGeo.translate(0, -legLength / 2, 0);   // move geometry so top of leg is at local y=0
+
+  const leftLeg = new THREE.Mesh(legGeo, stickMat);
+  leftLeg.position.set(-0.32, hipY, 0);
+  leftLeg.rotation.z = 0.18;                // slight outward stance at rest
+  group.add(leftLeg);
+  (group.userData.parts as StickFigureParts).leftLeg = leftLeg;
+
+  const rightLeg = new THREE.Mesh(legGeo, stickMat);
+  rightLeg.position.set(0.32, hipY, 0);
+  rightLeg.rotation.z = -0.18;
+  group.add(rightLeg);
+  (group.userData.parts as StickFigureParts).rightLeg = rightLeg;
+
+  // === ARMS — pivoting from the shoulder (top of arm) ===
+  const shoulderY = 3.55;
+  const armLength = 1.82;
+
+  const armGeo = new THREE.CylinderGeometry(0.048, 0.048, armLength, 5);
+  armGeo.translate(0, -armLength / 2, 0);   // origin at top (shoulder)
+
+  const leftArm = new THREE.Mesh(armGeo, stickMat);
+  leftArm.position.set(-0.62, shoulderY, 0);
+  leftArm.rotation.z = 0.85;
+  group.add(leftArm);
+  (group.userData.parts as StickFigureParts).leftArm = leftArm;
+
+  const rightArm = new THREE.Mesh(armGeo, stickMat);
+  rightArm.position.set(0.62, shoulderY, 0);
+  group.add(rightArm);
+  (group.userData.parts as StickFigureParts).rightArm = rightArm;
+
+  // === WEAPONS (much more recognizable) ===
+  // IMPORTANT: Weapons are now children of the rightArm so they move with the hand
+  let weapon: THREE.Group | undefined;
+
+  if (type === 'miner') {
+    // Classic pickaxe — parented under the arm
+    rightArm.rotation.z = -0.72;
+
+    const pick = new THREE.Group();
+    pick.name = 'pickaxe';
+
+    const handle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.038, 0.038, 2.9, 4),
+      darkWood
+    );
+    handle.position.set(0.05, -0.15, 0); // local to arm
+    handle.rotation.z = -0.35;
+    pick.add(handle);
+
+    const pickHead = new THREE.Mesh(
+      new THREE.ConeGeometry(0.45, 0.95, 4),
+      weaponMat
+    );
+    pickHead.position.set(0.55, -0.65, 0);
+    pickHead.rotation.z = -1.35;
+    pick.add(pickHead);
+
+    const backSpike = new THREE.Mesh(
+      new THREE.ConeGeometry(0.16, 0.65, 4),
+      weaponMat
+    );
+    backSpike.position.set(-0.35, 0.25, 0);
+    backSpike.rotation.z = 0.95;
+    pick.add(backSpike);
+
+    rightArm.add(pick);           // ← Key fix: weapon is child of arm
+    weapon = pick;
+  } else {
+    // Swordwrath — sword parented under the arm
+    rightArm.rotation.z = -0.58;
+
+    const sword = new THREE.Group();
+    sword.name = 'sword';
+
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.065, 2.1, 0.26),
+      weaponMat
+    );
+    blade.position.set(0.12, 0.35, 0);
+    blade.rotation.z = -0.18;
+    sword.add(blade);
+
+    const hilt = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.2, 0.38),
+      new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
+    );
+    hilt.position.set(0.02, -0.15, 0);
+    sword.add(hilt);
+
+    const guard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.38, 0.07, 0.48),
+      new THREE.MeshLambertMaterial({ color: teamColor })
+    );
+    guard.position.set(0.05, 0.05, 0);
+    sword.add(guard);
+
+    rightArm.add(sword);          // ← Key fix
+    weapon = sword;
+  }
+
+  if (weapon) {
+    (group.userData.parts as StickFigureParts).weapon = weapon;
+  }
+
+  // Team color accents
+  const band = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.125, 0.125, 0.38, 5),
     new THREE.MeshLambertMaterial({ color: teamColor })
   );
-  helm.position.y = 4.95;
-  helm.scale.set(1, 0.35, 1); // flat top like classic
-  group.add(helm);
+  band.position.y = 3.55;
+  group.add(band);
 
   return group;
 }

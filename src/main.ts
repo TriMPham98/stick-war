@@ -17,6 +17,7 @@ import {
   FIXED_STEP,
 } from './game/constants';
 import { createStickFigure } from './game/rendering/createStickFigure';
+import { animateStickFigure } from './game/rendering/animateStickFigure';
 import { Game } from './game/Game';
 
 // The real simulation (Phase 1.4 — miners now work!)
@@ -578,20 +579,8 @@ function animate() {
       });
     }
 
-    // Simple procedural animation based on state
-    const isMining = unit.state === 'mining';
-    const bob = isMining ? Math.sin(t * 6) * 0.05 : Math.sin(t * 4.2) * 0.18;
-    mesh.position.y = bob;
-
-    // Leg/arm swing when moving
-    const moving = unit.state === 'moving' || unit.state === 'returning';
-    const swing = moving ? Math.sin(t * 5.5) * 0.7 : 0.1;
-
-    if (mesh.children[2]) (mesh.children[2] as THREE.Mesh).rotation.z = 0.2 + swing;
-    if (mesh.children[3]) (mesh.children[3] as THREE.Mesh).rotation.z = -0.2 - swing * 0.9;
-
-    // Slight facing for returning vs going to mine
-    mesh.rotation.y = unit.state === 'returning' ? 0.15 : -0.05;
+    // Proper structured animation (walk, mine, attack, idle, death)
+    animateStickFigure(mesh, unit, t);
 
     // === Health bar (Phase 3) ===
     let hb = healthBars.get(unit.id);
