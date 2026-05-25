@@ -106,6 +106,34 @@ html, body {
   color: var(--success);
 }
 
+#player-units,
+#enemy-units {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+#player-units {
+  color: #7dd3fc; /* light blue for player forces */
+}
+
+#enemy-units {
+  color: #f87171; /* red for enemy */
+}
+
+/* Production button hotkey hints */
+.prod-btn .hotkey {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: rgba(90, 176, 255, 0.15);
+  color: #7dd3fc;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
 #status-text {
   font-size: 12px;
   color: var(--text-muted);
@@ -177,6 +205,52 @@ html, body {
   font-size: 12px;
   color: var(--text-muted);
   font-family: var(--mono);
+}
+
+#queue-display .queue-header {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+#queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.queue-item .name {
+  width: 82px;
+  color: #c5c8d1;
+  text-transform: uppercase;
+}
+
+.queue-item .bar {
+  flex: 1;
+  height: 4px;
+  background: #1f232b;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.queue-item .bar-fill {
+  height: 100%;
+  background: #5ab0ff;
+  transition: width 0.06s linear;
+}
+
+.queue-item .pct {
+  width: 32px;
+  text-align: right;
+  color: #7f8596;
 }
 
 /* Instructions / debug footer */

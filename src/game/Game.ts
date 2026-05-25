@@ -10,22 +10,24 @@ import {
   GOLD_START,
   GOLD_NODE_X,
   PLAYER_STATUE_X,
-  ENEMY_STATUE_X,
   LANE_MIN_X,
   LANE_MAX_X,
 } from './constants';
+import { ProductionSystem } from './production';
+import { EnemySpawner } from './EnemySpawner';
+import { CombatSystem } from './CombatSystem';
 
 let nextId = 1;
 
 function createUnit(type: UnitType, team: 0 | 1, x: number): Unit {
-  const def = type === 'miner' ? MINER : ({} as any);
+  const def = type === 'miner' ? MINER : SWORDWRATH;
   return {
     id: nextId++,
     type,
     team,
     x,
-    health: def.hp ?? 60,
-    maxHealth: def.maxHealth ?? 60,
+    health: def.hp,
+    maxHealth: def.maxHealth,
     state: 'moving',
     attackCooldown: 0,
     targetX: type === 'miner' ? GOLD_NODE_X : undefined,
@@ -38,8 +40,9 @@ function distance(a: number, b: number) {
 
 export class Game {
   state: GameState;
-  private enemySpawnTimer = 0;
-  private enemySpawnInterval = 7.5; // seconds between enemy waves (tunable)
+  private production: ProductionSystem;
+  private spawner: EnemySpawner;
+  private combat: CombatSystem;
 
   // Phase 4 stats
   gameStartTime = performance.now();
@@ -59,31 +62,26 @@ export class Game {
     this.state.units.push(createUnit('miner', 0, -18));
     this.state.units.push(createUnit('miner', 0, -20.5));
     this.state.units.push(createUnit('miner', 0, -15));
+
+    this.production = new ProductionSystem(this.state);
+    this.spawner = new EnemySpawner();
+    this.combat = new CombatSystem(this.state);
   }
 
   update(dt: number) {
-    // === Production Queue (Phase 2) ===
-    if (this.state.productionQueue.length > 0) {
-      const current = this.state.productionQueue[0];
-      current.progress += dt;
-
-      if (current.progress >= current.totalTime) {
-        const spawnX = PLAYER_STATUE_X + 3;
-        const unit = this.spawnUnit(current.type, 0, spawnX);
-        unit.targetX = GOLD_NODE_X + (Math.random() - 0.5) * 8;
-        this.state.productionQueue.shift();
-      }
+    // === Production Queue (delegated to ProductionSystem) ===
+    const finishedType = this.production.update(dt);
+    if (finishedType) {
+      const spawnX = PLAYER_STATUE_X + 3;
+      const unit = this.spawnUnit(finishedType, 0, spawnX);
+      unit.targetX = GOLD_NODE_X + (Math.random() - 0.5) * 8;
     }
 
-    // === Simple Enemy AI Spawner (Phase 2.4) ===
-    this.enemySpawnTimer += dt;
-    if (this.enemySpawnTimer >= this.enemySpawnInterval) {
-      this.enemySpawnTimer = 0;
-      // Spawn 1-2 enemy units (mix of miner and swordwrath)
-      const enemyType: UnitType = Math.random() > 0.35 ? 'swordwrath' : 'miner';
-      const spawnX = ENEMY_STATUE_X - 3; // right side
-      const u = this.spawnUnit(enemyType, 1, spawnX);
-      u.targetX = GOLD_NODE_X - 5 + (Math.random() - 0.5) * 6;
+    // === Enemy AI Spawner (delegated) ===
+    const spawn = this.spawner.update(dt);
+    if (spawn) {
+      const u = this.spawnUnit(spawn.type, 1, spawn.spawnX);
+      u.targetX = spawn.targetX;
     }
 
     // === Miner Economy (existing) ===
@@ -155,6 +153,24 @@ export class Game {
       if (unit.state === 'dead') continue;
       if (unit.type === 'miner' && unit.team === 0) continue; // miners handled by economy logic
 
+      // Auto-pursuit behavior: acquire nearest enemy if no explicit order (for swordwrath mainly)
+      if (!unit.targetX && !unit.targetEnemyId && unit.type !== 'miner') {
+        const aggroRange = 14;
+        let nearest: Unit | null = null;
+        let minDist = Infinity;
+        for (const other of this.state.units) {
+          if (other.team === unit.team || other.state === 'dead') continue;
+          const d = distance(unit.x, other.x);
+          if (d < aggroRange && d < minDist) {
+            minDist = d;
+            nearest = other;
+          }
+        }
+        if (nearest) {
+          unit.targetEnemyId = nearest.id;
+        }
+      }
+
       let targetX: number | undefined = unit.targetX;
 
       // Pursuit logic for explicit attack commands (this was missing)
@@ -183,8 +199,25 @@ export class Game {
       }
     }
 
-    // === Combat (Phase 2.3) ===
-    this.processCombat(dt);
+    // === Combat (delegated to CombatSystem) ===
+    this.combat.update(dt);
+
+    // Unit separation (all units, prevent overlap) - minimal addition (moved after combat so statue DPS uses stable pre-sep positions for the tick)
+    const allLiving = this.state.units.filter(u => u.state !== 'dead' && !(u.type === 'miner' && u.team === 0));
+    for (let i = 0; i < allLiving.length; i++) {
+      for (let j = i + 1; j < allLiving.length; j++) {
+        const a = allLiving[i], b = allLiving[j];
+        const d = distance(a.x, b.x);
+        if (d < 1.3 && d > 0.05) {
+          const p = (1.3 - d) * 0.4 * dt;
+          const s = Math.sign(a.x - b.x) || 1;
+          a.x += p * s;
+          b.x -= p * s;
+          a.x = Math.max(LANE_MIN_X + 1, Math.min(LANE_MAX_X - 1, a.x));
+          b.x = Math.max(LANE_MIN_X + 1, Math.min(LANE_MAX_X - 1, b.x));
+        }
+      }
+    }
   }
 
   /** Queue a unit for production (spends gold immediately) */
@@ -195,13 +228,7 @@ export class Game {
     this.state.gold -= def.cost;
     this.unitsProduced += 1;
 
-    this.state.productionQueue.push({
-      type,
-      progress: 0,
-      totalTime: def.buildTime,
-    });
-
-    return true;
+    return this.production.queue(type);
   }
 
   private spawnUnit(type: UnitType, team: 0 | 1, x: number): Unit {
@@ -222,67 +249,6 @@ export class Game {
   }
 
   /** Very basic combat for Phase 2 */
-  private processCombat(dt: number) {
-    const living = this.state.units.filter(u => u.state !== 'dead');
-
-    for (let i = 0; i < living.length; i++) {
-      const a = living[i];
-      if (a.attackCooldown > 0) a.attackCooldown -= dt;
-
-      for (let j = i + 1; j < living.length; j++) {
-        const b = living[j];
-        if (a.team === b.team) continue;
-
-        const dist = distance(a.x, b.x);
-        const range = (a.type === 'miner' ? MINER : SWORDWRATH).attackRange;
-
-        if (dist < range && a.attackCooldown <= 0) {
-          // a attacks b
-          const dmg = (a.type === 'miner' ? MINER : SWORDWRATH).attackDamage;
-          b.health -= dmg;
-          (b as any)._damageFlash = 0.35; // visual flash timer (seconds)
-          a.attackCooldown = (a.type === 'miner' ? MINER : SWORDWRATH).attackCooldown;
-
-          if (b.health <= 0) {
-            b.state = 'dead';
-          }
-        }
-
-        if (b.attackCooldown <= 0 && dist < ((b.type === 'miner' ? MINER : SWORDWRATH).attackRange)) {
-          const dmg = (b.type === 'miner' ? MINER : SWORDWRATH).attackDamage;
-          a.health -= dmg;
-          (a as any)._damageFlash = 0.35;
-          b.attackCooldown = (b.type === 'miner' ? MINER : SWORDWRATH).attackCooldown;
-
-          if (a.health <= 0) {
-            a.state = 'dead';
-          }
-        }
-      }
-    }
-
-    // Remove dead units (simple for now)
-    this.state.units = this.state.units.filter(u => u.state !== 'dead');
-
-    // === Statue damage (Phase 2.5) ===
-    const playerStatueX = PLAYER_STATUE_X;
-    const enemyStatueX = ENEMY_STATUE_X;
-
-    for (const unit of this.state.units) {
-      if (unit.team === 1 && Math.abs(unit.x - playerStatueX) < 4) {
-        // Enemy attacking player statue
-        this.state.playerStatueHP -= (unit.type === 'swordwrath' ? 1.8 : 0.8) * dt * 4;
-      }
-      if (unit.team === 0 && Math.abs(unit.x - enemyStatueX) < 4) {
-        this.state.enemyStatueHP -= (unit.type === 'swordwrath' ? 1.8 : 0.8) * dt * 4;
-      }
-    }
-
-    // Clamp HP
-    this.state.playerStatueHP = Math.max(0, this.state.playerStatueHP);
-    this.state.enemyStatueHP = Math.max(0, this.state.enemyStatueHP);
-  }
-
   get units(): Unit[] {
     return this.state.units;
   }

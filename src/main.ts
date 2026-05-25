@@ -14,6 +14,7 @@ import {
   LANE_LENGTH,
   PLAYER_STATUE_X,
   ENEMY_STATUE_X,
+  FIXED_STEP,
 } from './game/constants';
 import { createStickFigure } from './game/rendering/createStickFigure';
 import { Game } from './game/Game';
@@ -36,11 +37,7 @@ let orderMarkers: THREE.Mesh[] = [];
 // Selection state (Phase 2.6)
 const selectedUnits = new Set<number>();
 
-// Local demo-only timing (will be removed once real deposits fully replace it)
-interface DemoState {
-  gold: number;
-  lastGoldTick: number;
-}
+
 
 // Input / Picking helpers
 const raycaster = new THREE.Raycaster();
@@ -158,7 +155,9 @@ function stopSelectedUnits() {
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const goldEl = document.getElementById('gold-value')!;
 const incomeEl = document.getElementById('income-value')!;
-const queueEl = document.getElementById('queue-text')!;
+const playerUnitsEl = document.getElementById('player-units')!;
+const enemyUnitsEl = document.getElementById('enemy-units')!;
+const queueList = document.getElementById('queue-list')!;
 const prodPanel = document.getElementById('production-buttons')!;
 
 // Simple HP displays (added dynamically for Phase 2)
@@ -173,12 +172,6 @@ document.getElementById('top-bar')!.appendChild(enemyHP);
 const selectedDisplay = document.createElement('div');
 selectedDisplay.style.cssText = 'margin-left: auto; margin-right: 12px; color: #5ab0ff; font-family: var(--mono); font-size: 13px;';
 document.getElementById('top-bar')!.appendChild(selectedDisplay);
-
-// Demo-only timing (real gold now lives in game.gold)
-const state: DemoState = {
-  gold: 150,
-  lastGoldTick: performance.now(),
-};
 
 // Three.js setup
 const renderer = new THREE.WebGLRenderer({
@@ -289,25 +282,41 @@ scene.add(goldPile);
 // UI Wiring (Phase 0 demo buttons)
 // ============================================
 function updateGoldUI() {
-  // Phase 1.3: Prefer real game gold (will become the only source in 1.4)
   const displayGold = Math.floor(game.gold);
   goldEl.textContent = displayGold.toString();
 
-  // Temporary fake income display (replaced when real deposits happen)
-  const elapsed = (performance.now() - state.lastGoldTick) / 1000;
-  incomeEl.textContent = `+${(12 * Math.max(0, Math.min(1, elapsed / 8))).toFixed(0)}/s`;
+  // Real economy: rough activity estimate from active player miners (~2g/s per based on 18g deposits; actual varies with travel/state/congestion)
+  const activeMiners = game.units.filter((u) => u.type === 'miner' && u.team === 0).length;
+  incomeEl.textContent = activeMiners > 0 ? `+${Math.floor(activeMiners * 2)}/s` : '+0/s';
 }
 
-function addDemoButton(label: string, cost: number, onClick: () => void) {
+function updateUnitCountsUI() {
+  const playerMiners = game.units.filter(u => u.type === 'miner' && u.team === 0).length;
+  const playerSwords = game.units.filter(u => u.type === 'swordwrath' && u.team === 0).length;
+  const enemyTotal = game.units.filter(u => u.team === 1).length;
+
+  playerUnitsEl.textContent = `M:${playerMiners} S:${playerSwords}`;
+  enemyUnitsEl.textContent = enemyTotal.toString();
+}
+
+function flashProductionButton(index: number) {
+  const btn = prodButtons[index];
+  if (!btn) return;
+  btn.style.borderColor = 'var(--danger)';
+  setTimeout(() => (btn.style.borderColor = ''), 220);
+}
+
+function addDemoButton(label: string, cost: number, onClick: () => void, hotkey?: string) {
   const btn = document.createElement('button');
   btn.className = 'prod-btn';
-  btn.innerHTML = `${label} <span class="cost">${cost}g</span>`;
+  const hotkeyHtml = hotkey ? `<span class="hotkey">${hotkey}</span>` : '';
+  btn.innerHTML = `${label} ${hotkeyHtml}<span class="cost">${cost}g</span>`;
   btn.onclick = () => {
     // Phase 1.5: Spend from the real game gold so the economy feels connected
     if (game.gold >= cost) {
-      game.state.gold -= cost; // direct for demo buttons (real queue comes in Phase 2)
       onClick();
       updateGoldUI();
+      updateUnitCountsUI();
     } else {
       btn.style.borderColor = 'var(--danger)';
       setTimeout(() => (btn.style.borderColor = ''), 220);
@@ -318,23 +327,52 @@ function addDemoButton(label: string, cost: number, onClick: () => void) {
 }
 
 // Real production buttons (Phase 2)
-addDemoButton('MINER', 75, () => {
+const minerBtn = addDemoButton('MINER', 75, () => {
   game.queueUnit('miner');
-});
+}, 'Q');
 
-addDemoButton('SWORDWRATH', 125, () => {
+const swordBtn = addDemoButton('SWORDWRATH', 125, () => {
   game.queueUnit('swordwrath');
-});
+}, 'W');
 
-// Update queue display every frame (simple for now)
+const prodButtons = [minerBtn, swordBtn];
+
+// Update queue display — rich multi-item view
 function updateQueueUI() {
   const q = game.state.productionQueue;
+  queueList.innerHTML = '';
+
   if (q.length === 0) {
-    queueEl.textContent = 'Queue: idle';
-  } else {
-    const first = q[0];
-    const pct = Math.floor((first.progress / first.totalTime) * 100);
-    queueEl.textContent = `Queue: ${first.type} ${pct}% (${q.length} in queue)`;
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:#5a5f6e; font-size:11px;';
+    empty.textContent = 'Queue: idle';
+    queueList.appendChild(empty);
+    return;
+  }
+
+  // Show up to 4 items with progress bars
+  const maxVisible = 4;
+  for (let i = 0; i < Math.min(q.length, maxVisible); i++) {
+    const item = q[i];
+    const pct = Math.floor((item.progress / item.totalTime) * 100);
+
+    const row = document.createElement('div');
+    row.className = 'queue-item';
+
+    row.innerHTML = `
+      <span class="name">${item.type}</span>
+      <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <span class="pct">${pct}%</span>
+    `;
+
+    queueList.appendChild(row);
+  }
+
+  if (q.length > maxVisible) {
+    const more = document.createElement('div');
+    more.style.cssText = 'font-size:10px; color:#5a5f6e; margin-top:1px;';
+    more.textContent = `+${q.length - maxVisible} more`;
+    queueList.appendChild(more);
   }
 }
 
@@ -433,6 +471,31 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     stopSelectedUnits();
   }
+
+  // Production hotkeys (Q = Miner, W = Swordwrath)
+  const key = e.key.toLowerCase();
+  if (key === 'q') {
+    e.preventDefault();
+    const cost = 75;
+    if (game.gold >= cost) {
+      game.queueUnit('miner');
+      updateGoldUI();
+      updateUnitCountsUI();
+    } else {
+      flashProductionButton(0);
+    }
+  }
+  if (key === 'w') {
+    e.preventDefault();
+    const cost = 125;
+    if (game.gold >= cost) {
+      game.queueUnit('swordwrath');
+      updateGoldUI();
+      updateUnitCountsUI();
+    } else {
+      flashProductionButton(1);
+    }
+  }
 });
 
 // ============================================
@@ -457,7 +520,7 @@ onResize();
 // ============================================
 let frame = 0;
 let accumulator = 0;
-const FIXED_STEP = 1 / 30; // 30 Hz logic (from constants in later step)
+let lastTime = performance.now();
 
 function animate() {
   requestAnimationFrame(animate);
@@ -466,8 +529,8 @@ function animate() {
   const now = performance.now();
 
   // Fixed timestep accumulator — real game logic now runs here
-  const delta = Math.min((now - (window as any)._lastTime || now) / 1000, 0.1);
-  (window as any)._lastTime = now;
+  const delta = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
   accumulator += delta;
 
   while (accumulator >= FIXED_STEP) {
@@ -496,19 +559,21 @@ function animate() {
     // Update position from simulation (1D lane → 3D)
     mesh.position.x = unit.x;
 
-    // Damage flash (quick white flash on hit)
-    const flash = (unit as any)._damageFlash;
-    if (flash && flash > 0) {
-      (unit as any)._damageFlash = Math.max(0, flash - delta); // delta is from the loop
-      mesh.traverse((child: any) => {
-        if (child.material && child.material.emissive) {
-          child.material.emissive.setHex(0x888888);
+    // Damage flash (quick white flash on hit) — read from render-only transient on the unit
+    const flash = unit.damageFlash ?? 0;
+    if (flash > 0) {
+      unit.damageFlash = Math.max(0, flash - delta);
+      mesh.traverse((child: THREE.Object3D) => {
+        const mat = (child as THREE.Mesh).material as THREE.Material & { emissive?: THREE.Color };
+        if (mat && mat.emissive) {
+          mat.emissive.setHex(0x888888);
         }
       });
     } else {
-      mesh.traverse((child: any) => {
-        if (child.material && child.material.emissive) {
-          child.material.emissive.setHex(0x000000);
+      mesh.traverse((child: THREE.Object3D) => {
+        const mat = (child as THREE.Mesh).material as THREE.Material & { emissive?: THREE.Color };
+        if (mat && mat.emissive) {
+          mat.emissive.setHex(0x000000);
         }
       });
     }
@@ -547,8 +612,15 @@ function animate() {
     const fillEl = hb.firstElementChild as HTMLDivElement;
     fillEl.style.width = `${pct * 100}%`;
 
-    // Team color for the bar
-    const barColor = unit.team === 0 ? '#4ade80' : '#f87171';
+    // Health bar color transitions (green >66%, yellow 33-66%, red <33%)
+    let barColor: string;
+    if (pct > 0.66) {
+      barColor = unit.team === 0 ? '#4ade80' : '#f87171';
+    } else if (pct > 0.33) {
+      barColor = '#facc15';
+    } else {
+      barColor = '#ef4444';
+    }
     fillEl.style.background = barColor;
 
     // Only show health bar if damaged (classic behavior) or selected
@@ -647,6 +719,7 @@ function animate() {
   // Update UI from the *real* economy + production queue
   updateGoldUI();
   updateQueueUI();
+  updateUnitCountsUI();
 
   // Selected units command feedback
   if (selectedUnits.size > 0) {
@@ -666,7 +739,14 @@ function animate() {
     playerStatueHB.style.left = `${playerStatueScreen.x - 30}px`;
     playerStatueHB.style.top = `${playerStatueScreen.y - 22}px`;
     playerStatueHB.style.display = 'block';
-    (playerStatueHB.firstElementChild as HTMLDivElement).style.width = `${(game.playerStatueHP / 650) * 100}%`;
+    const pFill = playerStatueHB.firstElementChild as HTMLDivElement;
+    const pPct = Math.max(0, game.playerStatueHP / 650);
+    pFill.style.width = `${pPct * 100}%`;
+    let pBarColor: string;
+    if (pPct > 0.66) pBarColor = '#4ade80';
+    else if (pPct > 0.33) pBarColor = '#facc15';
+    else pBarColor = '#ef4444';
+    pFill.style.background = pBarColor;
   } else {
     playerStatueHB.style.display = 'none';
   }
@@ -676,7 +756,14 @@ function animate() {
     enemyStatueHB.style.left = `${enemyStatueScreen.x - 30}px`;
     enemyStatueHB.style.top = `${enemyStatueScreen.y - 22}px`;
     enemyStatueHB.style.display = 'block';
-    (enemyStatueHB.firstElementChild as HTMLDivElement).style.width = `${(game.enemyStatueHP / 650) * 100}%`;
+    const eFill = enemyStatueHB.firstElementChild as HTMLDivElement;
+    const ePct = Math.max(0, game.enemyStatueHP / 650);
+    eFill.style.width = `${ePct * 100}%`;
+    let eBarColor: string;
+    if (ePct > 0.66) eBarColor = '#f87171';
+    else if (ePct > 0.33) eBarColor = '#facc15';
+    else eBarColor = '#ef4444';
+    eFill.style.background = eBarColor;
   } else {
     enemyStatueHB.style.display = 'none';
   }
@@ -720,6 +807,7 @@ restartBtn.onclick = () => {
 };
 
 updateGoldUI();
+updateUnitCountsUI();
 animate();
 
 console.log('%c[Stick War] Phase 0 hello scene ready. Press SPACE for debug state. R to reset camera.', 'color:#5ab0ff');

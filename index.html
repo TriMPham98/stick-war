@@ -23,6 +23,14 @@
           <span class="label">INCOME</span>
           <span id="income-value">+0/s</span>
         </div>
+        <div class="stat">
+          <span class="label">YOUR FORCES</span>
+          <span id="player-units" class="forces">M:0 S:0</span>
+        </div>
+        <div class="stat">
+          <span class="label">ENEMY</span>
+          <span id="enemy-units" class="forces">0</span>
+        </div>
         <div class="stat right">
           <span id="status-text">ORDER vs ENEMY • DEMO</span>
         </div>
@@ -35,7 +43,8 @@
           <!-- Populated dynamically in main.ts for Phase 0 demo -->
         </div>
         <div id="queue-display">
-          <span id="queue-text">Queue: —</span>
+          <div class="queue-header">PRODUCTION QUEUE</div>
+          <div id="queue-list"></div>
         </div>
       </div>
 

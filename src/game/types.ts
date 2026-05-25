@@ -28,8 +28,10 @@ export interface Unit {
   targetEnemyId?: number;
   carryGold?: number;  // only meaningful for miners
   attackCooldown: number;
-  // Visual-only animation state (updated by render sync)
+  // Visual-only animation state (updated by render sync, never used by game logic)
   animTime?: number;
+  /** Transient visual flash timer (seconds). Set by combat, consumed by renderer. */
+  damageFlash?: number;
 }
 
 export interface ProductionOrder {
