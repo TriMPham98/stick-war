@@ -53,10 +53,10 @@ export function createStickFigure(
 
   // === TORSO (slightly thicker than before for better silhouette) ===
   const torso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.11, 0.095, 2.5, 5),
+    new THREE.CylinderGeometry(0.12, 0.105, 2.35, 5), // slightly shorter for better proportions
     stickMat
   );
-  torso.position.y = 3.05;
+  torso.position.y = 3.1;
   group.add(torso);
   (group.userData.parts as StickFigureParts).torso = torso;
 
@@ -71,40 +71,40 @@ export function createStickFigure(
   }
 
   // === LEGS — pivoting from the hip (top of leg), not the center ===
-  const hipY = 1.88;                    // joint position at bottom of torso
-  const legLength = 2.32;
+  const hipY = 1.925;                   // exactly at bottom of torso
+  const legLength = 2.28;
 
   // Create leg geometry with origin at the TOP (hip) instead of center
   const legGeo = new THREE.CylinderGeometry(0.055, 0.055, legLength, 5);
   legGeo.translate(0, -legLength / 2, 0);   // move geometry so top of leg is at local y=0
 
   const leftLeg = new THREE.Mesh(legGeo, stickMat);
-  leftLeg.position.set(-0.32, hipY, 0);
-  leftLeg.rotation.z = 0.18;                // slight outward stance at rest
+  leftLeg.position.set(-0.18, hipY, 0);     // closer to torso so fulcrum looks attached
+  leftLeg.rotation.z = 0.16;
   group.add(leftLeg);
   (group.userData.parts as StickFigureParts).leftLeg = leftLeg;
 
   const rightLeg = new THREE.Mesh(legGeo, stickMat);
-  rightLeg.position.set(0.32, hipY, 0);
-  rightLeg.rotation.z = -0.18;
+  rightLeg.position.set(0.18, hipY, 0);
+  rightLeg.rotation.z = -0.16;
   group.add(rightLeg);
   (group.userData.parts as StickFigureParts).rightLeg = rightLeg;
 
   // === ARMS — pivoting from the shoulder (top of arm) ===
-  const shoulderY = 3.55;
-  const armLength = 1.82;
+  const shoulderY = 4.05;               // high on the torso, near the top
+  const armLength = 1.78;
 
   const armGeo = new THREE.CylinderGeometry(0.048, 0.048, armLength, 5);
   armGeo.translate(0, -armLength / 2, 0);   // origin at top (shoulder)
 
   const leftArm = new THREE.Mesh(armGeo, stickMat);
-  leftArm.position.set(-0.62, shoulderY, 0);
-  leftArm.rotation.z = 0.85;
+  leftArm.position.set(-0.22, shoulderY, 0);   // much closer to body
+  leftArm.rotation.z = 0.78;
   group.add(leftArm);
   (group.userData.parts as StickFigureParts).leftArm = leftArm;
 
   const rightArm = new THREE.Mesh(armGeo, stickMat);
-  rightArm.position.set(0.62, shoulderY, 0);
+  rightArm.position.set(0.22, shoulderY, 0);
   group.add(rightArm);
   (group.userData.parts as StickFigureParts).rightArm = rightArm;
 
