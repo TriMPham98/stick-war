@@ -109,72 +109,93 @@ export function createStickFigure(
   (group.userData.parts as StickFigureParts).rightArm = rightArm;
 
   // === WEAPONS (much more recognizable) ===
-  // IMPORTANT: Weapons are now children of the rightArm so they move with the hand
+  // Weapons are now properly handheld: grip is attached at the end of the arm (wrist/hand)
+  // so they swing from the hand, not from the shoulder/torso.
+  const handOffsetY = -armLength * 0.88; // near the bottom of the arm
   let weapon: THREE.Group | undefined;
 
   if (type === 'miner') {
-    // Classic pickaxe — parented under the arm
-    rightArm.rotation.z = -0.72;
+    // === Miner Pickaxe - handheld ===
+    rightArm.rotation.z = -0.68;
 
     const pick = new THREE.Group();
     pick.name = 'pickaxe';
 
+    // Grip point is at the weapon group's local origin (0,0,0)
+    // The handle extends "forward" from the hand.
+
+    // Handle (gripped near the bottom)
     const handle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.038, 0.038, 2.9, 4),
+      new THREE.CylinderGeometry(0.036, 0.036, 2.55, 4),
       darkWood
     );
-    handle.position.set(0.05, -0.15, 0); // local to arm
-    handle.rotation.z = -0.35;
+    handle.position.set(0.02, 0.95, 0);   // most of handle above the grip
+    handle.rotation.z = 0.25;
     pick.add(handle);
 
+    // Pick head (working end)
     const pickHead = new THREE.Mesh(
-      new THREE.ConeGeometry(0.45, 0.95, 4),
+      new THREE.ConeGeometry(0.42, 0.88, 4),
       weaponMat
     );
-    pickHead.position.set(0.55, -0.65, 0);
-    pickHead.rotation.z = -1.35;
+    pickHead.position.set(0.52, 1.72, 0);
+    pickHead.rotation.z = -1.38;
     pick.add(pickHead);
 
+    // Small back spike for classic look
     const backSpike = new THREE.Mesh(
-      new THREE.ConeGeometry(0.16, 0.65, 4),
+      new THREE.ConeGeometry(0.15, 0.6, 4),
       weaponMat
     );
-    backSpike.position.set(-0.35, 0.25, 0);
-    backSpike.rotation.z = 0.95;
+    backSpike.position.set(-0.28, 0.35, 0);
+    backSpike.rotation.z = 0.9;
     pick.add(backSpike);
 
-    rightArm.add(pick);           // ← Key fix: weapon is child of arm
+    // Attach the whole pick so its grip sits at the hand
+    pick.position.set(0.06, handOffsetY, 0);
+    pick.rotation.z = -0.35; // natural hold angle
+
+    rightArm.add(pick);
     weapon = pick;
   } else {
-    // Swordwrath — sword parented under the arm
-    rightArm.rotation.z = -0.58;
+    // === Swordwrath Sword - handheld ===
+    rightArm.rotation.z = -0.55;
 
     const sword = new THREE.Group();
     sword.name = 'sword';
 
+    // Grip at local (0,0,0) of the sword group
+
+    // Blade extends forward from the hand
     const blade = new THREE.Mesh(
-      new THREE.BoxGeometry(0.065, 2.1, 0.26),
+      new THREE.BoxGeometry(0.062, 1.95, 0.24),
       weaponMat
     );
-    blade.position.set(0.12, 0.35, 0);
-    blade.rotation.z = -0.18;
+    blade.position.set(0.08, 0.82, 0);
+    blade.rotation.z = -0.12;
     sword.add(blade);
 
+    // Hilt (where the hand grips)
     const hilt = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.2, 0.38),
+      new THREE.BoxGeometry(0.15, 0.18, 0.36),
       new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
     );
-    hilt.position.set(0.02, -0.15, 0);
+    hilt.position.set(0, -0.08, 0);
     sword.add(hilt);
 
+    // Crossguard
     const guard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.38, 0.07, 0.48),
+      new THREE.BoxGeometry(0.34, 0.06, 0.44),
       new THREE.MeshLambertMaterial({ color: teamColor })
     );
-    guard.position.set(0.05, 0.05, 0);
+    guard.position.set(0.02, 0.12, 0);
     sword.add(guard);
 
-    rightArm.add(sword);          // ← Key fix
+    // Attach so the hilt/grip is at the hand
+    sword.position.set(0.04, handOffsetY, 0);
+    sword.rotation.z = -0.28;
+
+    rightArm.add(sword);
     weapon = sword;
   }
 
