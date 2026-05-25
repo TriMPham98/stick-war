@@ -12,6 +12,7 @@ import {
   PLAYER_STATUE_X,
   LANE_MIN_X,
   LANE_MAX_X,
+  ENEMY_SPAWN_INTERVAL,
 } from './constants';
 import { ProductionSystem } from './production';
 import { EnemySpawner } from './EnemySpawner';
@@ -58,13 +59,14 @@ export class Game {
       productionQueue: [],
     };
 
-    // Three real Miners — the heart of the MVP economy
+    // Starting miners — increased for easier early game
     this.state.units.push(createUnit('miner', 0, -18));
     this.state.units.push(createUnit('miner', 0, -20.5));
     this.state.units.push(createUnit('miner', 0, -15));
+    this.state.units.push(createUnit('miner', 0, -23)); // extra miner to make the level easier
 
     this.production = new ProductionSystem(this.state);
-    this.spawner = new EnemySpawner();
+    this.spawner = new EnemySpawner(ENEMY_SPAWN_INTERVAL); // slower spawns = easier level
     this.combat = new CombatSystem(this.state);
   }
 

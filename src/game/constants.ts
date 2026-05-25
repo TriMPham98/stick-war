@@ -13,7 +13,7 @@ export const LANE_MAX_X = 38;
 
 // === Economy & Units (MVP vertical slice) ===
 // Starting values tuned for fun early gameplay (expect heavy iteration)
-export const GOLD_START = 150;
+export const GOLD_START = 250; // Increased to make early game less punishing
 
 export const MINER = {
   cost: 75,
@@ -50,6 +50,9 @@ export const STATUE = {
 
 // === Timing & Simulation ===
 export const FIXED_STEP = 1 / 30; // 30 Hz fixed timestep for logic
+
+// === Difficulty Tuning ===
+export const ENEMY_SPAWN_INTERVAL = 13; // seconds between enemy unit spawns (higher = easier)
 
 // === Visual / Camera (Phase 0 seeds) ===
 export const CAMERA_START_X = 0;

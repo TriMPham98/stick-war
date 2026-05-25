@@ -73,7 +73,8 @@ export class CombatSystem {
 
     for (const unit of this.state.units) {
       if (unit.team === 1 && Math.abs(unit.x - playerStatueX) < 4) {
-        const dmgPerSec = unit.type === 'swordwrath' ? 1.8 : 0.8;
+        // Slightly reduced to make the level more forgiving
+        const dmgPerSec = unit.type === 'swordwrath' ? 1.5 : 0.7;
         this.state.playerStatueHP -= dmgPerSec * dt * 4;
       }
       if (unit.team === 0 && Math.abs(unit.x - enemyStatueX) < 4) {

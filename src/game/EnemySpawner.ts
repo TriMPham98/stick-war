@@ -2,7 +2,7 @@
  * EnemySpawner — simple timer-based enemy wave generator.
  *
  * Current behavior (preserved exactly):
- * - Every ~7.5s, spawn 1 enemy unit
+ * - Spawns 1 enemy unit every ENEMY_SPAWN_INTERVAL seconds
  * - 65% chance Swordwrath, 35% Miner
  * - Spawns near enemy statue, heads toward player statue area with some randomness
  *
@@ -11,7 +11,7 @@
  */
 
 import type { UnitType } from './types';
-import { ENEMY_STATUE_X, PLAYER_STATUE_X } from './constants';
+import { ENEMY_STATUE_X, PLAYER_STATUE_X, ENEMY_SPAWN_INTERVAL } from './constants';
 
 export interface SpawnRequest {
   type: UnitType;
@@ -21,9 +21,9 @@ export interface SpawnRequest {
 
 export class EnemySpawner {
   private timer = 0;
-  private interval = 7.5;
+  private interval: number;
 
-  constructor(intervalSeconds = 7.5) {
+  constructor(intervalSeconds = ENEMY_SPAWN_INTERVAL) {
     this.interval = intervalSeconds;
   }
 
