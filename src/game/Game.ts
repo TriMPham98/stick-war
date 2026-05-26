@@ -233,6 +233,46 @@ export class Game {
     return this.production.queue(type);
   }
 
+  // === Command API (Phase 0 boundary enforcement) ===
+  // All mutations of unit orders now go through these methods.
+  // Input/render code must never directly write targetX / targetEnemyId.
+
+  /** Clear all orders for the given unit IDs (Stop command) */
+  stopUnits(unitIds: readonly number[]): void {
+    for (const id of unitIds) {
+      const unit = this.state.units.find(u => u.id === id);
+      if (unit) {
+        unit.targetX = undefined;
+        unit.targetEnemyId = undefined;
+      }
+    }
+  }
+
+  /** Issue a pure move order to the given unit IDs */
+  issueMoveOrder(unitIds: readonly number[], targetX: number): void {
+    for (const id of unitIds) {
+      const unit = this.state.units.find(u => u.id === id && u.state !== 'dead');
+      if (unit) {
+        unit.targetX = targetX;
+        unit.targetEnemyId = undefined;
+      }
+    }
+  }
+
+  /** Issue an attack order on a specific enemy for the given unit IDs */
+  issueAttackOrder(unitIds: readonly number[], targetEnemyId: number): void {
+    const enemy = this.state.units.find(u => u.id === targetEnemyId && u.state !== 'dead');
+    if (!enemy) return;
+
+    for (const id of unitIds) {
+      const unit = this.state.units.find(u => u.id === id && u.state !== 'dead');
+      if (unit && unit.team !== enemy.team) {
+        unit.targetEnemyId = targetEnemyId;
+        unit.targetX = undefined;
+      }
+    }
+  }
+
   private spawnUnit(type: UnitType, team: 0 | 1, x: number): Unit {
     const def = type === 'miner' ? MINER : SWORDWRATH;
     const unit: Unit = {

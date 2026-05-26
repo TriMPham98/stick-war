@@ -102,27 +102,25 @@ function giveOrder(clientX: number, clientY: number) {
   const world = screenToWorld(clientX, clientY);
   if (!world || selectedUnits.size === 0) return;
 
-  for (const id of selectedUnits) {
-    const unit = game.units.find(u => u.id === id);
-    if (unit && unit.state !== 'dead') {
-      // Check for nearby enemy to attack
-      const enemyNearby = game.units.find(u => 
-        u.team !== unit.team && 
-        Math.abs(u.x - world.x) < 4.5 && 
-        u.state !== 'dead'
-      );
+  const selectedIds = [...selectedUnits];
 
-      if (enemyNearby) {
-        unit.targetEnemyId = enemyNearby.id;
-        unit.targetX = undefined;
-      } else {
-        unit.targetX = world.x;
-        unit.targetEnemyId = undefined;
-      }
-    }
+  // Picking heuristic stays in input layer (render side).
+  // The actual order mutation is now fully delegated to Game (see PR 1).
+  const enemyNearby = game.units.find(u =>
+    // We only need one representative unit to decide the intent
+    selectedIds.some(id => {
+      const sel = game.units.find(s => s.id === id);
+      return sel && sel.team !== u.team && Math.abs(u.x - world.x) < 4.5 && u.state !== 'dead';
+    })
+  );
+
+  if (enemyNearby) {
+    game.issueAttackOrder(selectedIds, enemyNearby.id);
+  } else {
+    game.issueMoveOrder(selectedIds, world.x);
   }
 
-  // Visual order marker (command feedback)
+  // Visual order marker (command feedback) — pure render, untouched
   const marker = new THREE.Mesh(
     new THREE.RingGeometry(0.8, 1.1, 20),
     new THREE.MeshBasicMaterial({ color: 0x5ab0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.7 })
@@ -139,15 +137,9 @@ function giveOrder(clientX: number, clientY: number) {
   }, 1200);
 }
 
-/** Stop command - clear all orders for selected units */
+/** Stop command - delegates to Game (no direct mutation in render/input layer) */
 function stopSelectedUnits() {
-  for (const id of selectedUnits) {
-    const unit = game.units.find(u => u.id === id);
-    if (unit) {
-      unit.targetX = undefined;
-      unit.targetEnemyId = undefined;
-    }
-  }
+  game.stopUnits([...selectedUnits]);
 }
 
 // ============================================
@@ -190,15 +182,15 @@ scene.fog = new THREE.Fog(0x0a0b0e, 60, 140);
 // Camera — "faithful 2D side view" feel (we'll tune orthographic later)
 const aspect = window.innerWidth / window.innerHeight;
 const camera = new THREE.OrthographicCamera(
-  -40 * aspect,
-  40 * aspect,
-  28,
-  -28,
+  -20 * aspect,   // Further zoomed in
+  20 * aspect,
+  14.5,
+  -14.5,
   0.1,
   200
 );
-camera.position.set(0, 38, 52);
-camera.lookAt(0, 6, 0);
+camera.position.set(0, 28, 38);   // Adjusted for tighter, more focused view
+camera.lookAt(0, 4, 0);
 
 // Lights (simple & cheap)
 scene.add(new THREE.AmbientLight(0x404050, 0.6));
@@ -425,23 +417,20 @@ window.addEventListener('mousemove', (e) => {
   const dx = e.clientX - prevMouseX;
   prevMouseX = e.clientX;
 
-  // Pan camera along the lane (X)
-  const panSpeed = 0.08;
+  // Pan camera on mouse lateral movement (drag to pan)
+  const panSpeed = 0.32;                    // Much more responsive panning
   camera.position.x -= dx * panSpeed;
-  camera.position.x = Math.max(-18, Math.min(18, camera.position.x));
-  camera.lookAt(camera.position.x * 0.3, 6, 0);
+
+  // Wide pan range so you can actually see most of the map
+  const maxPan = 42;
+  camera.position.x = Math.max(-maxPan, Math.min(maxPan, camera.position.x));
+
+  // Pure L/R panning — camera slides sideways while looking straight forward (no rotation)
+  camera.lookAt(camera.position.x, 4, 0);
 });
 
-canvas.addEventListener('wheel', (e) => {
-  // Simple zoom (scale ortho)
-  const zoomSpeed = 0.0018;
-  const factor = 1 + Math.sign(e.deltaY) * zoomSpeed * 60;
-  camera.left *= factor;
-  camera.right *= factor;
-  camera.top *= factor;
-  camera.bottom *= factor;
-  camera.updateProjectionMatrix();
-});
+// Zoom disabled as requested
+// (Previously allowed scroll wheel zooming)
 
 // Keyboard
 window.addEventListener('keydown', (e) => {
@@ -456,13 +445,13 @@ window.addEventListener('keydown', (e) => {
     });
   }
   if (e.key.toLowerCase() === 'r') {
-    // Reset camera
-    camera.position.set(0, 38, 52);
-    camera.lookAt(0, 6, 0);
-    camera.left = -40 * aspect;
-    camera.right = 40 * aspect;
-    camera.top = 28;
-    camera.bottom = -28;
+    // Reset camera to new zoomed-in defaults
+    camera.position.set(0, 28, 38);
+    camera.lookAt(0, 4, 0);
+    camera.left = -20 * aspect;
+    camera.right = 20 * aspect;
+    camera.top = 14.5;
+    camera.bottom = -14.5;
     camera.updateProjectionMatrix();
   }
   if (e.key.toLowerCase() === 'escape') {
@@ -508,7 +497,7 @@ function onResize() {
   renderer.setSize(w, h);
 
   const newAspect = w / h;
-  const base = 40;
+  const base = 20;                    // Matches the new zoomed-in camera
   camera.left = -base * newAspect;
   camera.right = base * newAspect;
   camera.updateProjectionMatrix();
